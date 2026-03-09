@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+
+  whatsapp-api:
+    build: .
+    container_name: whatsapp-api
+    restart: always
+    ports:
+      - "3010:3010"
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./sessions:/app/.wwebjs_auth
+
+    environment:
+      - NODE_ENV=production
+
+  postgres:
+    image: postgres:16
+    container_name: whatsapp_notifier_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: whatsapp_notifier
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5439:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d whatsapp_notifier"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: whatsapp_notifier_app
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     PORT: 3000
+  #     DATABASE_URL: postgresql://postgres:postgres@postgres:5439/whatsapp_notifier
+  #     PRINT_QR_IN_TERMINAL: "true"
+  #     NODE_ENV: development
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - .:/usr/src/app
+  #     - /usr/src/app/node_modules
+  #   command: sh -c "npm install && npm run dev"
+
+volumes:
+  postgres_data:

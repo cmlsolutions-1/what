@@ -1,7 +1,11 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const pool = require("../infrastructure/database/postgres-pool");
+import pool from "../infrastructure/database/postgres-pool.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function run() {
   const migrationPath = path.resolve(
@@ -22,4 +26,3 @@ run().catch(async (error) => {
   await pool.end();
   process.exit(1);
 });
-

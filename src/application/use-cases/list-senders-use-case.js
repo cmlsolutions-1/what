@@ -8,5 +8,4 @@ class ListSendersUseCase {
   }
 }
 
-module.exports = ListSendersUseCase;
-
+export default ListSendersUseCase;

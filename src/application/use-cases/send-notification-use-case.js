@@ -1,5 +1,5 @@
-const AppError = require("../../shared/errors/app-error");
-const { normalizePhoneNumber } = require("../../shared/utils/phone-utils");
+import AppError from "../../shared/errors/app-error.js";
+import { normalizePhoneNumber } from "../../shared/utils/phone-utils.js";
 
 class SendNotificationUseCase {
   constructor(senderRepository, sessionManager) {
@@ -13,7 +13,10 @@ class SendNotificationUseCase {
     }
 
     const senderNormalizedPhone = normalizePhoneNumber(fromPhoneNumber);
+    console.log(senderNormalizedPhone);
     const sender = await this.senderRepository.findByNormalizedPhoneNumber(senderNormalizedPhone);
+
+    console.log(sender);
 
     if (!sender) {
       throw new AppError("The sender phone number is not registered", 404);
@@ -32,5 +35,4 @@ class SendNotificationUseCase {
   }
 }
 
-module.exports = SendNotificationUseCase;
-
+export default SendNotificationUseCase;

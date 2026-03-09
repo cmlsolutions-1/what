@@ -1,51 +1,31 @@
-# WhatsApp Notifications API (Baileys + PostgreSQL)
+# WhatsApp Notifications API (whatsapp-web.js + PostgreSQL)
 
 API REST para registrar numeros emisores de WhatsApp y enviar notificaciones desde el numero emisor indicado.
-
-## Estructura
-
-```text
-src/
-  app.js
-  server.js
-  config/
-    env.js
-    logger.js
-  shared/
-    errors/
-    utils/
-  domain/
-    entities/
-    repositories/
-  application/
-    use-cases/
-  infrastructure/
-    database/
-      migrations/
-    repositories/
-    whatsapp/
-    http/
-      controllers/
-      routes/
-      middlewares/
-  scripts/
-    init-db.js
-```
 
 ## Requisitos
 
 - Node.js 18+
 - PostgreSQL activo
+- Chrome/Chromium instalado (si no usas el binario por defecto de Puppeteer)
 
 ## Configuracion
 
 1. Copia variables de entorno:
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
-2. Ajusta `DATABASE_URL` con tus credenciales.
+2. Ajusta `DATABASE_URL` y, si aplica, `WWEBJS_EXECUTABLE_PATH`.
+
+## Variables de entorno
+
+- `PORT`: puerto HTTP.
+- `DATABASE_URL`: cadena de conexion Postgres.
+- `PRINT_QR_IN_TERMINAL`: `true|false` para mostrar QR.
+- `WWEBJS_AUTH_DIR`: carpeta local de sesiones de whatsapp-web.js.
+- `WWEBJS_HEADLESS`: `true|false` para ejecutar navegador en headless.
+- `WWEBJS_EXECUTABLE_PATH`: ruta a Chrome/Chromium (opcional).
 
 ## Inicializar base de datos
 
@@ -53,7 +33,7 @@ cp .env.example .env
 npm run db:init
 ```
 
-Esto crea la tabla `whatsapp_senders`.
+Crea/actualiza la tabla `whatsapp_senders`.
 
 ## Ejecutar API
 
@@ -69,8 +49,6 @@ Base URL: `http://localhost:3010`
 
 `POST /api/senders`
 
-Body:
-
 ```json
 {
   "displayName": "Linea Ventas",
@@ -78,27 +56,21 @@ Body:
 }
 ```
 
-### 2) Listar numeros emisores
+### 2) Listar emisores
 
 `GET /api/senders`
 
-### 3) Iniciar conexion WhatsApp de un emisor (QR)
+### 3) Conectar emisor (QR)
 
 `POST /api/senders/:senderId/connect`
 
-Respuesta:
-- `status: "qr"` cuando hay QR para escanear.
-- `status: "connected"` cuando la sesion ya esta activa.
-
-### 4) Consultar estado de sesion
+### 4) Estado de sesion
 
 `GET /api/senders/:senderId/status`
 
 ### 5) Enviar notificacion
 
 `POST /api/notifications/send`
-
-Body:
 
 ```json
 {
@@ -108,19 +80,13 @@ Body:
 }
 ```
 
+## Comportamiento de envio
+
+Antes de enviar el mensaje, la API abre el chat objetivo (open chat window) y luego envia el texto.
+
 ## Flujo recomendado
 
-1. Crear emisor en `/api/senders`.
-2. Conectar emisor en `/api/senders/:senderId/connect`.
-3. Obtener QR y escanear con WhatsApp del emisor.
-4. Verificar estado `connected` con `/api/senders/:senderId/status`.
-5. Enviar mensajes con `/api/notifications/send`.
-
-## Notas
-
-- Las credenciales de Baileys se guardan en `.baileys_auth/`.
-- Si un emisor no esta conectado, la API devolvera error 400 al enviar.
-- `PRINT_QR_IN_TERMINAL=true` imprime QR en consola para escaneo rapido.
-
-
-
+1. Crear emisor.
+2. Conectar emisor y escanear QR.
+3. Confirmar estado `connected`.
+4. Enviar notificaciones.

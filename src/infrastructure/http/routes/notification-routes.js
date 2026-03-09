@@ -1,4 +1,6 @@
-const { Router } = require("express");
+import express from "express";
+
+const { Router } = express;
 
 function buildNotificationRoutes(notificationController) {
   const router = Router();
@@ -8,5 +10,4 @@ function buildNotificationRoutes(notificationController) {
   return router;
 }
 
-module.exports = buildNotificationRoutes;
-
+export default buildNotificationRoutes;

@@ -1,4 +1,4 @@
-const AppError = require("../../shared/errors/app-error");
+import AppError from "../../shared/errors/app-error.js";
 
 class GetSenderStatusUseCase {
   constructor(senderRepository, sessionManager) {
@@ -20,5 +20,4 @@ class GetSenderStatusUseCase {
   }
 }
 
-module.exports = GetSenderStatusUseCase;
-
+export default GetSenderStatusUseCase;

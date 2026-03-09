@@ -1,6 +1,6 @@
 import AppError from "../../shared/errors/app-error.js";
 
-class ConnectSenderUseCase {
+class DisconnectSenderUseCase {
   constructor(senderRepository, sessionManager) {
     this.senderRepository = senderRepository;
     this.sessionManager = sessionManager;
@@ -13,13 +13,13 @@ class ConnectSenderUseCase {
       throw new AppError("Sender was not found", 404);
     }
 
-    const session = await this.sessionManager.connect(sender);
+    const result = await this.sessionManager.disconnect(senderId);
 
     return {
       sender,
-      session,
+      session: result,
     };
   }
 }
 
-export default ConnectSenderUseCase;
+export default DisconnectSenderUseCase;

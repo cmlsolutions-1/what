@@ -1,7 +1,8 @@
 {
   "name": "notificationswhatssap",
   "version": "1.0.0",
-  "description": "API para enviar notificaciones de WhatsApp con Baileys y PostgreSQL",
+  "description": "API para enviar notificaciones de WhatsApp con whatsapp-web.js y PostgreSQL",
+  "type": "module",
   "main": "src/server.js",
   "scripts": {
     "dev": "node src/server.js",
@@ -10,19 +11,19 @@
   },
   "keywords": [
     "whatsapp",
-    "baileys",
+    "whatsapp-web-js",
     "notifications",
     "postgres"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
     "pg": "^8.20.0",
     "pino": "^10.3.1",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.6"
   }
 }
-

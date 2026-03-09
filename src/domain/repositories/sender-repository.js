@@ -16,5 +16,4 @@ class SenderRepository {
   }
 }
 
-module.exports = SenderRepository;
-
+export default SenderRepository;

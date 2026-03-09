@@ -1,4 +1,4 @@
-const AppError = require("../../../shared/errors/app-error");
+import AppError from "../../../shared/errors/app-error.js";
 
 function errorHandler(error, _req, res, _next) {
   if (error instanceof AppError) {
@@ -13,6 +13,4 @@ function errorHandler(error, _req, res, _next) {
   });
 }
 
-module.exports = errorHandler;
-
-
+export default errorHandler;

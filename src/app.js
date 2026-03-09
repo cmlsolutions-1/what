@@ -1,49 +1,48 @@
-const fs = require("fs");
-const path = require("path");
-const express = require("express");
+import express from "express";
 
-const env = require("./config/env");
-const logger = require("./config/logger");
+import logger from "./config/logger.js";
 
-const pool = require("./infrastructure/database/postgres-pool");
-const PostgresSenderRepository = require("./infrastructure/repositories/postgres-sender-repository");
-const BaileysSessionManager = require("./infrastructure/whatsapp/baileys-session-manager");
+import pool from "./infrastructure/database/postgres-pool.js";
+import PostgresSenderRepository from "./infrastructure/repositories/postgres-sender-repository.js";
+import WhatsappWebSessionManager from "./infrastructure/whatsapp/whatsapp-web-session-manager.js";
 
-const CreateSenderUseCase = require("./application/use-cases/create-sender-use-case");
-const ListSendersUseCase = require("./application/use-cases/list-senders-use-case");
-const ConnectSenderUseCase = require("./application/use-cases/connect-sender-use-case");
-const GetSenderStatusUseCase = require("./application/use-cases/get-sender-status-use-case");
-const SendNotificationUseCase = require("./application/use-cases/send-notification-use-case");
+import CreateSenderUseCase from "./application/use-cases/create-sender-use-case.js";
+import DisconnectSenderUseCase from "./application/use-cases/close-sender-use-case.js";
+import ListSendersUseCase from "./application/use-cases/list-senders-use-case.js";
+import ConnectSenderUseCase from "./application/use-cases/connect-sender-use-case.js";
+import GetSenderStatusUseCase from "./application/use-cases/get-sender-status-use-case.js";
+import SendNotificationUseCase from "./application/use-cases/send-notification-use-case.js";
 
-const SenderController = require("./infrastructure/http/controllers/sender-controller");
-const NotificationController = require("./infrastructure/http/controllers/notification-controller");
+import SenderController from "./infrastructure/http/controllers/sender-controller.js";
+import NotificationController from "./infrastructure/http/controllers/notification-controller.js";
 
-const buildSenderRoutes = require("./infrastructure/http/routes/sender-routes");
-const buildNotificationRoutes = require("./infrastructure/http/routes/notification-routes");
+import buildSenderRoutes from "./infrastructure/http/routes/sender-routes.js";
+import buildNotificationRoutes from "./infrastructure/http/routes/notification-routes.js";
 
-const notFoundHandler = require("./infrastructure/http/middlewares/not-found-handler");
-const errorHandler = require("./infrastructure/http/middlewares/error-handler");
+import notFoundHandler from "./infrastructure/http/middlewares/not-found-handler.js";
+import errorHandler from "./infrastructure/http/middlewares/error-handler.js";
+import rateLimit from "express-rate-limit";
 
 function createApp() {
-  fs.mkdirSync(path.resolve(env.authBasePath), { recursive: true });
+
+
 
   const senderRepository = new PostgresSenderRepository(pool);
-  const sessionManager = new BaileysSessionManager({
-    authBasePath: env.authBasePath,
-    logger,
-  });
+  const sessionManager = new WhatsappWebSessionManager({ logger });
 
   const createSenderUseCase = new CreateSenderUseCase(senderRepository);
   const listSendersUseCase = new ListSendersUseCase(senderRepository);
   const connectSenderUseCase = new ConnectSenderUseCase(senderRepository, sessionManager);
   const getSenderStatusUseCase = new GetSenderStatusUseCase(senderRepository, sessionManager);
   const sendNotificationUseCase = new SendNotificationUseCase(senderRepository, sessionManager);
+  const disconnectSenderUseCase = new DisconnectSenderUseCase(senderRepository, sessionManager)
 
   const senderController = new SenderController({
     createSenderUseCase,
     listSendersUseCase,
     connectSenderUseCase,
     getSenderStatusUseCase,
+    disconnectSenderUseCase
   });
 
   const notificationController = new NotificationController({
@@ -57,8 +56,15 @@ function createApp() {
     res.status(200).json({ status: "ok" });
   });
 
-  app.use("/api/senders", buildSenderRoutes(senderController));
-  app.use("/api/notifications", buildNotificationRoutes(notificationController));
+  const limiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60
+  });
+
+  app.use(limiter);
+
+  app.use("/api/senders", apiKeyMiddleware, buildSenderRoutes(senderController));
+  app.use("/api/notifications", apiKeyMiddleware, buildNotificationRoutes(notificationController));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -66,5 +72,14 @@ function createApp() {
   return app;
 }
 
-module.exports = createApp;
+function apiKeyMiddleware(req, res, next) {
+  const apiKey = req.headers["x-api-key"];
 
+  if (apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  next();
+}
+
+export default createApp;

@@ -1,11 +1,12 @@
-const AppError = require("../../../shared/errors/app-error");
+import AppError from "../../../shared/errors/app-error.js";
 
 class SenderController {
-  constructor({ createSenderUseCase, listSendersUseCase, connectSenderUseCase, getSenderStatusUseCase }) {
+  constructor({ createSenderUseCase, listSendersUseCase, connectSenderUseCase, getSenderStatusUseCase, disconnectSenderUseCase }) {
     this.createSenderUseCase = createSenderUseCase;
     this.listSendersUseCase = listSendersUseCase;
     this.connectSenderUseCase = connectSenderUseCase;
     this.getSenderStatusUseCase = getSenderStatusUseCase;
+    this.disconnectSenderUseCase = disconnectSenderUseCase;
   }
 
   create = async (req, res, next) => {
@@ -75,8 +76,25 @@ class SenderController {
       next(error);
     }
   };
+
+  disconnect = async (req, res, next) => {
+    try {
+      const senderId = Number(req.params.senderId);
+
+      if (Number.isNaN(senderId)) {
+        throw new AppError("senderId is invalid", 400);
+      }
+
+      const result = await this.disconnectSenderUseCase.execute(senderId);
+
+      res.status(200).json({
+        message: "Sender disconnected",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
-module.exports = SenderController;
-
-
+export default SenderController;

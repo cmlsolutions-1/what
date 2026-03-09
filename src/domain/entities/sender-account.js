@@ -5,6 +5,8 @@ class SenderAccount {
     phoneNumber,
     normalizedPhoneNumber,
     authFolder,
+    status,
+    lastDisconnectReason,
     createdAt,
     updatedAt,
   }) {
@@ -13,10 +15,11 @@ class SenderAccount {
     this.phoneNumber = phoneNumber;
     this.normalizedPhoneNumber = normalizedPhoneNumber;
     this.authFolder = authFolder;
+    this.status = status;
+    this.lastDisconnectReason = lastDisconnectReason;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
 }
 
-module.exports = SenderAccount;
-
+export default SenderAccount;

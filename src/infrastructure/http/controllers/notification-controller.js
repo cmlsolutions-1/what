@@ -1,4 +1,4 @@
-const AppError = require("../../../shared/errors/app-error");
+import AppError from "../../../shared/errors/app-error.js";
 
 class NotificationController {
   constructor({ sendNotificationUseCase }) {
@@ -29,6 +29,4 @@ class NotificationController {
   };
 }
 
-module.exports = NotificationController;
-
-
+export default NotificationController;

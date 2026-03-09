@@ -1,5 +1,5 @@
-const path = require("path");
-const dotenv = require("dotenv");
+import path from "path";
+import dotenv from "dotenv";
 
 dotenv.config();
 
@@ -22,10 +22,14 @@ function getPort() {
   return parsedPort;
 }
 
-module.exports = {
+const env = {
   port: getPort(),
   databaseUrl: getRequiredEnv("DATABASE_URL"),
   logLevel: process.env.LOG_LEVEL ?? "info",
-  authBasePath: path.resolve(process.cwd(), process.env.BAILEYS_AUTH_DIR ?? ".baileys_auth"),
+  printQrInTerminal: process.env.PRINT_QR_IN_TERMINAL !== "false",
+  wwebjsAuthDir: path.resolve(process.cwd(), process.env.WWEBJS_AUTH_DIR ?? ".wwebjs_auth"),
+  wwebjsHeadless: process.env.WWEBJS_HEADLESS !== "false",
+  wwebjsExecutablePath: process.env.WWEBJS_EXECUTABLE_PATH || undefined,
 };
 
+export default env;

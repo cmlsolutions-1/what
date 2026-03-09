@@ -1,4 +1,4 @@
-const SenderAccount = require("../../domain/entities/sender-account");
+import SenderAccount from "../../domain/entities/sender-account.js";
 
 class PostgresSenderRepository {
   constructor(pool) {
@@ -9,7 +9,7 @@ class PostgresSenderRepository {
     const query = `
       INSERT INTO whatsapp_senders (display_name, phone_number, normalized_phone_number, auth_folder)
       VALUES ($1, $2, $3, $4)
-      RETURNING id, display_name, phone_number, normalized_phone_number, auth_folder, created_at, updated_at
+      RETURNING id, display_name, phone_number, normalized_phone_number, auth_folder, status, last_disconnect_reason, created_at, updated_at
     `;
 
     const values = [displayName, phoneNumber, normalizedPhoneNumber, authFolder];
@@ -19,7 +19,7 @@ class PostgresSenderRepository {
 
   async listAll() {
     const query = `
-      SELECT id, display_name, phone_number, normalized_phone_number, auth_folder, created_at, updated_at
+      SELECT id, display_name, phone_number, normalized_phone_number, auth_folder, status, last_disconnect_reason, created_at, updated_at
       FROM whatsapp_senders
       ORDER BY id ASC
     `;
@@ -30,7 +30,7 @@ class PostgresSenderRepository {
 
   async findById(id) {
     const query = `
-      SELECT id, display_name, phone_number, normalized_phone_number, auth_folder, created_at, updated_at
+      SELECT id, display_name, phone_number, normalized_phone_number, auth_folder, status, last_disconnect_reason, created_at, updated_at
       FROM whatsapp_senders
       WHERE id = $1
       LIMIT 1
@@ -42,7 +42,7 @@ class PostgresSenderRepository {
 
   async findByNormalizedPhoneNumber(normalizedPhoneNumber) {
     const query = `
-      SELECT id, display_name, phone_number, normalized_phone_number, auth_folder, created_at, updated_at
+      SELECT id, display_name, phone_number, normalized_phone_number, auth_folder, status, last_disconnect_reason, created_at, updated_at
       FROM whatsapp_senders
       WHERE normalized_phone_number = $1
       LIMIT 1
@@ -59,11 +59,12 @@ class PostgresSenderRepository {
       phoneNumber: row.phone_number,
       normalizedPhoneNumber: row.normalized_phone_number,
       authFolder: row.auth_folder,
+      status: row.status,
+      lastDisconnectReason: row.last_disconnect_reason,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
   }
 }
 
-module.exports = PostgresSenderRepository;
-
+export default PostgresSenderRepository;

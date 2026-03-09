@@ -1,4 +1,4 @@
-const AppError = require("../errors/app-error");
+import AppError from "../errors/app-error.js";
 
 function normalizePhoneNumber(phoneNumber) {
   if (!phoneNumber || typeof phoneNumber !== "string") {
@@ -22,8 +22,4 @@ function toWhatsappJid(normalizedPhoneNumber) {
   return `${normalizedPhoneNumber}@s.whatsapp.net`;
 }
 
-module.exports = {
-  normalizePhoneNumber,
-  toWhatsappJid,
-};
-
+export { normalizePhoneNumber, toWhatsappJid };

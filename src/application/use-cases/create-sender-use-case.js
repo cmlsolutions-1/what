@@ -1,5 +1,5 @@
-const AppError = require("../../shared/errors/app-error");
-const { normalizePhoneNumber } = require("../../shared/utils/phone-utils");
+import AppError from "../../shared/errors/app-error.js";
+import { normalizePhoneNumber } from "../../shared/utils/phone-utils.js";
 
 class CreateSenderUseCase {
   constructor(senderRepository) {
@@ -28,5 +28,4 @@ class CreateSenderUseCase {
   }
 }
 
-module.exports = CreateSenderUseCase;
-
+export default CreateSenderUseCase;

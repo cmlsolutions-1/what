@@ -4,5 +4,4 @@ function notFoundHandler(_req, res) {
   });
 }
 
-module.exports = notFoundHandler;
-
+export default notFoundHandler;

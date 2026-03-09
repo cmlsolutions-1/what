@@ -1,4 +1,6 @@
-const { Router } = require("express");
+import express from "express";
+
+const { Router } = express;
 
 function buildSenderRoutes(senderController) {
   const router = Router();
@@ -7,9 +9,9 @@ function buildSenderRoutes(senderController) {
   router.get("/", senderController.list);
   router.post("/:senderId/connect", senderController.connect);
   router.get("/:senderId/status", senderController.status);
+  router.get("/:senderId/disconnect", senderController.disconnect)
 
   return router;
 }
 
-module.exports = buildSenderRoutes;
-
+export default buildSenderRoutes;
