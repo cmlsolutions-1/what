@@ -56,6 +56,8 @@ function createApp() {
     res.status(200).json({ status: "ok" });
   });
 
+  app.set("trust proxy", 1);
+
   const limiter = rateLimit({
     windowMs: 60 * 1000,
     max: 60
