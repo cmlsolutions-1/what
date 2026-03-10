@@ -16,7 +16,9 @@ function clearChromiumLocks(sessionPath) {
   const lockFiles = [
     "SingletonLock",
     "SingletonSocket",
-    "SingletonCookie"
+    "SingletonCookie",
+    "DevToolsActivePort",
+    "LOCK"
   ];
 
   for (const file of lockFiles) {
@@ -25,9 +27,7 @@ function clearChromiumLocks(sessionPath) {
     if (fs.existsSync(fullPath)) {
       try {
         fs.rmSync(fullPath, { force: true });
-      } catch (err) {
-        console.warn("Failed removing chromium lock:", fullPath);
-      }
+      } catch { }
     }
   }
 }
@@ -48,7 +48,7 @@ class WhatsappWebSessionManager {
     fs.mkdirSync(env.wwebjsAuthDir, { recursive: true });
   }
 
-  
+
 
   async connect(sender) {
 
@@ -75,7 +75,13 @@ class WhatsappWebSessionManager {
 
     const authClientId = sender.authFolder || `sender_${sender.id}`;
 
-    clearChromiumLocks(sessionPath);
+    const sessionPath = path.join(
+      env.wwebjsAuthDir,
+      `session-${authClientId}`
+    );
+
+
+    // clearChromiumLocks(sessionPath);
 
     const client = this.createClient(authClientId);
 
@@ -120,6 +126,7 @@ class WhatsappWebSessionManager {
 
 
     } catch (error) {
+
       this.logger.error({ error, senderId: sender.id, stack: error.stack }, "Failed to initialize whatsapp-web.js client");
       session.status = "disconnected";
       session.lastDisconnectReason = "initialize_failed";
@@ -130,6 +137,29 @@ class WhatsappWebSessionManager {
         lastDisconnectReason: "initialize_failed",
       });
 
+      const msg = String(error?.message || "").toLowerCase();
+
+      const looksLikeLockError =
+        msg.includes("profile") ||
+        msg.includes("singleton") ||
+        msg.includes("in use") ||
+        msg.includes("devtoolsactiveport");
+
+      if (looksLikeLockError) {
+        clearChromiumLocks(sessionPath);
+        await this.sleep(1500);
+
+        const retryClient = this.createClient(authClientId);
+        session.client = retryClient;
+        this.registerClientEvents({ sender, session });
+
+        await retryClient.initialize();
+      } else {
+        throw error;
+      }
+
+
+
       throw error;
     }
 
@@ -139,7 +169,7 @@ class WhatsappWebSessionManager {
   createClient(authClientId) {
     const puppeteerConfig = {
       headless: env.wwebjsHeadless === true || env.wwebjsHeadless === "true",
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--no-zygote", "--single-process", "--disable-gpu", "--disable-features=site-per-process"],
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
     };
 
@@ -294,11 +324,12 @@ class WhatsappWebSessionManager {
   async sendMessage({ senderId, recipientPhoneNumber, message }) {
     const session = this.sessions.get(senderId);
 
-    console.log(session);
-
-    // if (!session || session.status !== "connected") {
-    //   throw new AppError("Sender is not connected. Connect the sender first and scan the QR code", 400);
-    // }
+    if (!session || session.status !== "connected") {
+      throw new AppError(
+        "Sender is not connected. Connect the sender first and scan the QR code",
+        400
+      );
+    }
 
     const recipientNormalizedPhone = normalizePhoneNumber(recipientPhoneNumber);
     const numberId = await session.client.getNumberId(recipientNormalizedPhone);
@@ -308,7 +339,6 @@ class WhatsappWebSessionManager {
     }
 
     const chatId = numberId._serialized;
-
     await this.openChatBeforeSend(session.client, chatId);
 
     const response = await session.client.sendMessage(chatId, message);

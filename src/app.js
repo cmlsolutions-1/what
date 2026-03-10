@@ -50,6 +50,8 @@ function createApp() {
   });
 
   const app = express();
+
+  app.use(errorHandler);
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
@@ -69,7 +71,6 @@ function createApp() {
   app.use("/api/notifications", apiKeyMiddleware, buildNotificationRoutes(notificationController));
 
   app.use(notFoundHandler);
-  app.use(errorHandler);
 
   return app;
 }
