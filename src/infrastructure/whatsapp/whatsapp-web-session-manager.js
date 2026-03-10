@@ -18,7 +18,7 @@ function clearChromiumLocks(sessionPath) {
     "SingletonSocket",
     "SingletonCookie",
     "DevToolsActivePort",
-    "LOCK"
+    "LOCK",
   ];
 
   for (const file of lockFiles) {
@@ -27,7 +27,7 @@ function clearChromiumLocks(sessionPath) {
     if (fs.existsSync(fullPath)) {
       try {
         fs.rmSync(fullPath, { force: true });
-      } catch { }
+      } catch {}
     }
   }
 }
@@ -48,40 +48,55 @@ class WhatsappWebSessionManager {
     fs.mkdirSync(env.wwebjsAuthDir, { recursive: true });
   }
 
+  normalizeSenderId(senderId) {
+    const normalized = Number(senderId);
 
-
-  async connect(sender) {
-
-    if (this.connectingPromises.has(sender.id)) {
-      return this.connectingPromises.get(sender.id);
+    if (Number.isNaN(normalized)) {
+      throw new AppError("Invalid sender id", 400, { senderId });
     }
 
-    const promise = this._connectInternal(sender).finally(() => {
-      this.connectingPromises.delete(sender.id);
+    return normalized;
+  }
+
+  normalizeSender(sender) {
+    return {
+      ...sender,
+      id: this.normalizeSenderId(sender.id),
+    };
+  }
+
+  async connect(sender) {
+    const normalizedSender = this.normalizeSender(sender);
+    const senderId = normalizedSender.id;
+
+    if (this.connectingPromises.has(senderId)) {
+      return this.connectingPromises.get(senderId);
+    }
+
+    const promise = this._connectInternal(normalizedSender).finally(() => {
+      this.connectingPromises.delete(senderId);
     });
 
-    this.connectingPromises.set(sender.id, promise);
+    this.connectingPromises.set(senderId, promise);
     return promise;
   }
 
   async _connectInternal(sender) {
-    const existingSession = this.sessions.get(sender.id);
+    const senderId = this.normalizeSenderId(sender.id);
+    const existingSession = this.sessions.get(senderId);
 
-    if (existingSession && ["initializing", "qr", "connected"].includes(existingSession.status)) {
+    if (
+      existingSession &&
+      ["initializing", "qr", "connected"].includes(existingSession.status)
+    ) {
       return this.buildStatus(existingSession);
     }
 
-    await this.replaceExistingSession(sender.id);
+    await this.replaceExistingSession(senderId);
 
-    const authClientId = sender.authFolder || `sender_${sender.id}`;
+    const authClientId = sender.authFolder || `sender_${senderId}`;
 
-    const sessionPath = path.join(
-      env.wwebjsAuthDir,
-      `session-${authClientId}`
-    );
-
-
-    // clearChromiumLocks(sessionPath);
+    const sessionPath = path.join(env.wwebjsAuthDir, `session-${authClientId}`);
 
     const client = this.createClient(authClientId);
 
@@ -93,14 +108,15 @@ class WhatsappWebSessionManager {
       reconnectTimer: null,
       authClientId,
       senderSnapshot: sender,
+      isClosing: false,
     };
 
-    this.sessions.set(sender.id, session);
+    this.sessions.set(senderId, session);
 
     this.registerClientEvents({ sender, session });
 
     await this.updateConnectionStatusSafe({
-      senderId: sender.id,
+      senderId,
       status: "initializing",
       lastDisconnectReason: null,
     });
@@ -123,19 +139,11 @@ class WhatsappWebSessionManager {
       client.pupBrowser?.on("disconnected", () => {
         console.log("[BROWSER DISCONNECTED]");
       });
-
-
     } catch (error) {
-
-      this.logger.error({ error, senderId: sender.id, stack: error.stack }, "Failed to initialize whatsapp-web.js client");
-      session.status = "disconnected";
-      session.lastDisconnectReason = "initialize_failed";
-
-      await this.updateConnectionStatusSafe({
-        senderId: sender.id,
-        status: "disconnected",
-        lastDisconnectReason: "initialize_failed",
-      });
+      this.logger.error(
+        { error, senderId, stack: error?.stack },
+        "Failed to initialize whatsapp-web.js client",
+      );
 
       const msg = String(error?.message || "").toLowerCase();
 
@@ -146,20 +154,70 @@ class WhatsappWebSessionManager {
         msg.includes("devtoolsactiveport");
 
       if (looksLikeLockError) {
-        clearChromiumLocks(sessionPath);
-        await this.sleep(1500);
+        try {
+          await this.safeDestroyClient(session.client);
+          await this.sleep(1000);
 
-        const retryClient = this.createClient(authClientId);
-        session.client = retryClient;
-        this.registerClientEvents({ sender, session });
+          clearChromiumLocks(sessionPath);
+          await this.sleep(1500);
 
-        await retryClient.initialize();
-      } else {
-        throw error;
+          const retryClient = this.createClient(authClientId);
+          session.client = retryClient;
+          session.status = "initializing";
+          session.qr = null;
+          session.lastDisconnectReason = null;
+
+          this.registerClientEvents({ sender, session });
+
+          await retryClient.initialize();
+
+          retryClient.pupPage?.on("console", (msg) => {
+            console.log("[PAGE CONSOLE]", msg.type(), msg.text());
+          });
+
+          retryClient.pupPage?.on("pageerror", (err) => {
+            console.log("[PAGE ERROR]", err.message);
+          });
+
+          retryClient.pupPage?.on("error", (err) => {
+            console.log("[PAGE CRASH]", err.message);
+          });
+
+          retryClient.pupBrowser?.on("disconnected", () => {
+            console.log("[BROWSER DISCONNECTED]");
+          });
+
+          return this.buildStatus(session);
+        } catch (retryError) {
+          this.logger.error(
+            { error: retryError, senderId, stack: retryError?.stack },
+            "Failed to initialize whatsapp-web.js client after lock cleanup",
+          );
+
+          session.status = "disconnected";
+          session.lastDisconnectReason = "initialize_failed";
+
+          await this.updateConnectionStatusSafe({
+            senderId,
+            status: "disconnected",
+            lastDisconnectReason: "initialize_failed",
+          });
+
+          this.sessions.delete(senderId);
+          throw retryError;
+        }
       }
 
+      session.status = "disconnected";
+      session.lastDisconnectReason = "initialize_failed";
 
+      await this.updateConnectionStatusSafe({
+        senderId,
+        status: "disconnected",
+        lastDisconnectReason: "initialize_failed",
+      });
 
+      this.sessions.delete(senderId);
       throw error;
     }
 
@@ -169,8 +227,16 @@ class WhatsappWebSessionManager {
   createClient(authClientId) {
     const puppeteerConfig = {
       headless: env.wwebjsHeadless === true || env.wwebjsHeadless === "true",
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--no-zygote", "--single-process", "--disable-gpu", "--disable-features=site-per-process"],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-zygote",
+        "--single-process",
+        "--disable-gpu",
+        "--disable-features=site-per-process",
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
     };
 
     if (env.wwebjsExecutablePath) {
@@ -184,12 +250,16 @@ class WhatsappWebSessionManager {
       }),
       puppeteer: puppeteerConfig,
       takeoverOnConflict: true,
-      takeoverTimeoutMs: 0
+      takeoverTimeoutMs: 0,
     });
   }
 
   registerClientEvents({ sender, session }) {
+    const senderId = this.normalizeSenderId(sender.id);
+
     session.client.on("qr", async (qrValue) => {
+      if (session.isClosing) return;
+
       session.status = "qr";
       session.qr = qrValue;
       session.lastDisconnectReason = null;
@@ -199,17 +269,19 @@ class WhatsappWebSessionManager {
       }
 
       await this.updateConnectionStatusSafe({
-        senderId: sender.id,
+        senderId,
         status: "qr",
         lastDisconnectReason: null,
       });
 
-      this.logger.info({ senderId: sender.id }, "QR generated for sender");
+      this.logger.info({ senderId }, "QR generated for sender");
     });
 
     session.client.on("ready", async () => {
+      if (session.isClosing) return;
 
       console.log("Readyy");
+
       if (session.reconnectTimer) {
         clearTimeout(session.reconnectTimer);
         session.reconnectTimer = null;
@@ -221,35 +293,42 @@ class WhatsappWebSessionManager {
 
       console.log("Llegue por aqui");
       console.log(session);
+
       await this.updateConnectionStatusSafe({
-        senderId: sender.id,
+        senderId,
         status: "connected",
         lastDisconnectReason: null,
       });
 
-      this.logger.info({ senderId: sender.id }, "Sender is connected to WhatsApp Web");
+      this.logger.info({ senderId }, "Sender is connected to WhatsApp Web");
     });
 
     session.client.on("auth_failure", async () => {
+      if (session.isClosing) return;
+      session.isClosing = true;
+
       console.log("auth_failure");
+
       session.status = "needs_reauth";
       session.qr = null;
       session.lastDisconnectReason = "auth_failure";
 
       await this.updateConnectionStatusSafe({
-        senderId: sender.id,
+        senderId,
         status: "needs_reauth",
         lastDisconnectReason: "auth_failure",
       });
 
       await this.clearAuthStateSafe(session.authClientId);
       await this.safeDestroyClient(session.client);
-      this.sessions.delete(sender.id);
+      this.sessions.delete(senderId);
 
-      this.logger.warn({ senderId: sender.id }, "Auth failure. Re-authentication required");
+      this.logger.warn({ senderId }, "Auth failure. Re-authentication required");
     });
 
     session.client.on("disconnected", async (reason) => {
+      if (session.isClosing) return;
+
       const reasonCode = this.mapDisconnectReason(reason);
 
       session.qr = null;
@@ -257,7 +336,7 @@ class WhatsappWebSessionManager {
 
       this.logger.warn(
         {
-          senderId: sender.id,
+          senderId,
           reason,
           mappedReason: reasonCode,
         },
@@ -265,7 +344,10 @@ class WhatsappWebSessionManager {
       );
 
       if (this.shouldForceReauth(reasonCode)) {
-        const nextStatus = reasonCode === "logged_out" ? "logged_out" : "needs_reauth";
+        session.isClosing = true;
+
+        const nextStatus =
+          reasonCode === "logged_out" ? "logged_out" : "needs_reauth";
 
         if (session.reconnectTimer) {
           clearTimeout(session.reconnectTimer);
@@ -275,21 +357,21 @@ class WhatsappWebSessionManager {
         session.status = nextStatus;
 
         await this.updateConnectionStatusSafe({
-          senderId: sender.id,
+          senderId,
           status: nextStatus,
           lastDisconnectReason: reasonCode,
         });
 
         await this.clearAuthStateSafe(session.authClientId);
         await this.safeDestroyClient(session.client);
-        this.sessions.delete(sender.id);
+        this.sessions.delete(senderId);
         return;
       }
 
       session.status = "reconnecting";
 
       await this.updateConnectionStatusSafe({
-        senderId: sender.id,
+        senderId,
         status: "reconnecting",
         lastDisconnectReason: reasonCode,
       });
@@ -300,7 +382,7 @@ class WhatsappWebSessionManager {
 
       session.reconnectTimer = setTimeout(() => {
         this.connect(sender).catch((error) => {
-          this.logger.error({ error, senderId: sender.id }, "Reconnect failed");
+          this.logger.error({ error, senderId }, "Reconnect failed");
         });
       }, 3000);
     });
@@ -318,24 +400,26 @@ class WhatsappWebSessionManager {
     });
   }
 
-
-
-
   async sendMessage({ senderId, recipientPhoneNumber, message }) {
-    const session = this.sessions.get(senderId);
+    const normalizedSenderId = this.normalizeSenderId(senderId);
+    const session = this.sessions.get(normalizedSenderId);
 
     if (!session || session.status !== "connected") {
       throw new AppError(
         "Sender is not connected. Connect the sender first and scan the QR code",
-        400
+        400,
       );
     }
 
-    const recipientNormalizedPhone = normalizePhoneNumber(recipientPhoneNumber);
+    const recipientNormalizedPhone =
+      normalizePhoneNumber(recipientPhoneNumber);
     const numberId = await session.client.getNumberId(recipientNormalizedPhone);
 
     if (!numberId?._serialized) {
-      throw new AppError("Recipient phone number is not registered on WhatsApp", 400);
+      throw new AppError(
+        "Recipient phone number is not registered on WhatsApp",
+        400,
+      );
     }
 
     const chatId = numberId._serialized;
@@ -360,7 +444,11 @@ class WhatsappWebSessionManager {
 
       const opened = await client.pupPage?.evaluate(async (targetChatId) => {
         const store = window.Store;
-        if (!store?.Cmd?.openChatAt || !store?.Chat?.find || !store?.WidFactory?.createWid) {
+        if (
+          !store?.Cmd?.openChatAt ||
+          !store?.Chat?.find ||
+          !store?.WidFactory?.createWid
+        ) {
           return false;
         }
 
@@ -381,11 +469,10 @@ class WhatsappWebSessionManager {
 
       await this.sleep(300);
     } catch (error) {
-      throw new AppError(
-        "Could not open chat before sending message",
-        500,
-        { chatId, reason: error.message },
-      );
+      throw new AppError("Could not open chat before sending message", 500, {
+        chatId,
+        reason: error.message,
+      });
     }
   }
 
@@ -397,7 +484,10 @@ class WhatsappWebSessionManager {
         lastDisconnectReason,
       });
     } catch (error) {
-      this.logger.error({ error, senderId, status }, "Failed to persist connection status");
+      this.logger.error(
+        { error, senderId, status },
+        "Failed to persist connection status",
+      );
     }
   }
 
@@ -436,7 +526,10 @@ class WhatsappWebSessionManager {
         fs.rmSync(folderPath, { recursive: true, force: true });
       }
     } catch (error) {
-      this.logger.error({ error, authClientId }, "Failed to clear whatsapp-web.js auth state");
+      this.logger.error(
+        { error, authClientId },
+        "Failed to clear whatsapp-web.js auth state",
+      );
     }
   }
 
@@ -449,25 +542,34 @@ class WhatsappWebSessionManager {
   }
 
   async replaceExistingSession(senderId) {
-    const existingSession = this.sessions.get(senderId);
+    const normalizedSenderId = this.normalizeSenderId(senderId);
+    const existingSession = this.sessions.get(normalizedSenderId);
 
     if (!existingSession) return;
 
     try {
+      existingSession.isClosing = true;
+
       if (existingSession.reconnectTimer) {
         clearTimeout(existingSession.reconnectTimer);
+        existingSession.reconnectTimer = null;
       }
 
       await this.safeDestroyClient(existingSession.client);
+      await this.sleep(1000);
     } catch (error) {
-      this.logger.warn({ error, senderId }, "Failed while closing previous session");
+      this.logger.warn(
+        { error, senderId: normalizedSenderId },
+        "Failed while closing previous session",
+      );
     } finally {
-      this.sessions.delete(senderId);
+      this.sessions.delete(normalizedSenderId);
     }
   }
 
   getStatus(senderId) {
-    const session = this.sessions.get(senderId);
+    const normalizedSenderId = this.normalizeSenderId(senderId);
+    const session = this.sessions.get(normalizedSenderId);
 
     if (!session) {
       return {
@@ -485,25 +587,32 @@ class WhatsappWebSessionManager {
       try {
         await this.connect(sender);
       } catch (error) {
-        this.logger.error({ error, senderId: sender.id }, "Failed to restore sender session");
+        this.logger.error(
+          { error, senderId: sender.id },
+          "Failed to restore sender session",
+        );
       }
     }
   }
 
   async disconnect(senderId) {
-    const session = this.sessions.get(senderId);
+    const normalizedSenderId = this.normalizeSenderId(senderId);
+    const session = this.sessions.get(normalizedSenderId);
 
     if (session) {
+      session.isClosing = true;
+
       if (session.reconnectTimer) {
         clearTimeout(session.reconnectTimer);
+        session.reconnectTimer = null;
       }
 
       await this.safeDestroyClient(session.client);
-      this.sessions.delete(senderId);
+      this.sessions.delete(normalizedSenderId);
     }
 
     await this.updateConnectionStatusSafe({
-      senderId,
+      senderId: normalizedSenderId,
       status: "disconnected",
       lastDisconnectReason: null,
     });
