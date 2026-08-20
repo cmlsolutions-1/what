@@ -33,7 +33,7 @@ function clearChromiumLocks(sessionPath) {
 }
 
 class WhatsappWebSessionManager {
-  constructor({ logger, senderRepository }) {
+  constructor({ logger, senderRepository, alertService }) {
     this.logger =
       logger ||
       pino({
@@ -41,9 +41,12 @@ class WhatsappWebSessionManager {
       });
 
     this.senderRepository = senderRepository ?? new WhatsappSenderRepository();
+    this.alertService = alertService;
 
     this.sessions = new Map();
     this.connectingPromises = new Map();
+    this.reconnectAttempts = new Map();
+    this.reconnectTimers = new Map();
 
     fs.mkdirSync(env.wwebjsAuthDir, { recursive: true });
   }
@@ -203,6 +206,14 @@ class WhatsappWebSessionManager {
             lastDisconnectReason: "initialize_failed",
           });
 
+          await this.sendAlertSafe({
+            sender,
+            status: "disconnected",
+            reason: "initialize_failed",
+            message:
+              "No fue posible inicializar la sesión de WhatsApp después de limpiar bloqueos de Chromium.",
+          });
+
           this.sessions.delete(senderId);
           throw retryError;
         }
@@ -215,6 +226,13 @@ class WhatsappWebSessionManager {
         senderId,
         status: "disconnected",
         lastDisconnectReason: "initialize_failed",
+      });
+
+      await this.sendAlertSafe({
+        sender,
+        status: "disconnected",
+        reason: "initialize_failed",
+        message: "No fue posible inicializar la sesión de WhatsApp.",
       });
 
       this.sessions.delete(senderId);
@@ -274,6 +292,13 @@ class WhatsappWebSessionManager {
         lastDisconnectReason: null,
       });
 
+      await this.sendAlertSafe({
+        sender,
+        status: "qr",
+        reason: "qr_required",
+        message: "La línea requiere escanear un nuevo código QR para quedar operativa.",
+      });
+
       this.logger.info({ senderId }, "QR generated for sender");
     });
 
@@ -286,6 +311,9 @@ class WhatsappWebSessionManager {
         clearTimeout(session.reconnectTimer);
         session.reconnectTimer = null;
       }
+
+      this.clearReconnectTimer(senderId);
+      this.reconnectAttempts.delete(senderId);
 
       session.status = "connected";
       session.qr = null;
@@ -317,6 +345,14 @@ class WhatsappWebSessionManager {
         senderId,
         status: "needs_reauth",
         lastDisconnectReason: "auth_failure",
+      });
+
+      await this.sendAlertSafe({
+        sender,
+        status: "needs_reauth",
+        reason: "auth_failure",
+        message:
+          "WhatsApp rechazó la autenticación guardada. Es necesario reconectar la línea y escanear QR.",
       });
 
       await this.clearAuthStateSafe(session.authClientId);
@@ -354,12 +390,21 @@ class WhatsappWebSessionManager {
           session.reconnectTimer = null;
         }
 
+        this.clearReconnectTimer(senderId);
         session.status = nextStatus;
 
         await this.updateConnectionStatusSafe({
           senderId,
           status: nextStatus,
           lastDisconnectReason: reasonCode,
+        });
+
+        await this.sendAlertSafe({
+          sender,
+          status: nextStatus,
+          reason: reasonCode,
+          message:
+            "WhatsApp cerró o invalidó esta sesión. Es necesario revisar la línea en el panel administrativo.",
         });
 
         await this.clearAuthStateSafe(session.authClientId);
@@ -376,15 +421,15 @@ class WhatsappWebSessionManager {
         lastDisconnectReason: reasonCode,
       });
 
-      if (session.reconnectTimer) {
-        clearTimeout(session.reconnectTimer);
-      }
+      await this.sendAlertSafe({
+        sender,
+        status: "reconnecting",
+        reason: reasonCode,
+        message:
+          "La línea se desconectó. El backend intentará reconectarla automáticamente.",
+      });
 
-      session.reconnectTimer = setTimeout(() => {
-        this.connect(sender).catch((error) => {
-          this.logger.error({ error, senderId }, "Reconnect failed");
-        });
-      }, 3000);
+      this.scheduleReconnect({ sender, session });
     });
 
     session.client.on("authenticated", () => {
@@ -491,6 +536,91 @@ class WhatsappWebSessionManager {
     }
   }
 
+  scheduleReconnect({ sender, session }) {
+    const senderId = this.normalizeSenderId(sender.id);
+    const currentAttempts = this.reconnectAttempts.get(senderId) ?? 0;
+    const nextAttempt = currentAttempts + 1;
+    const delay = Math.min(
+      env.reconnectBaseDelayMs * 2 ** currentAttempts,
+      env.reconnectMaxDelayMs,
+    );
+
+    this.reconnectAttempts.set(senderId, nextAttempt);
+
+    if (session.reconnectTimer) {
+      clearTimeout(session.reconnectTimer);
+    }
+
+    this.clearReconnectTimer(senderId);
+
+    this.logger.info(
+      { senderId, attempt: nextAttempt, delay },
+      "Scheduling WhatsApp sender reconnect",
+    );
+
+    session.reconnectTimer = setTimeout(() => {
+      this.reconnectTimers.delete(senderId);
+      this.connect(sender).catch(async (error) => {
+        this.logger.error(
+          { error, senderId, attempt: nextAttempt },
+          "Reconnect failed",
+        );
+
+        await this.updateConnectionStatusSafe({
+          senderId,
+          status: "reconnecting",
+          lastDisconnectReason: "reconnect_failed",
+        });
+
+        await this.sendAlertSafe({
+          sender,
+          status: "reconnecting",
+          reason: "reconnect_failed",
+          message:
+            "Falló un intento automático de reconexión. El backend seguirá intentando con mayor intervalo.",
+        });
+
+        const latestSession =
+          this.sessions.get(senderId) ?? {
+            isClosing: false,
+            reconnectTimer: null,
+          };
+
+        if (!latestSession.isClosing) {
+          this.scheduleReconnect({ sender, session: latestSession });
+        }
+      });
+    }, delay);
+
+    this.reconnectTimers.set(senderId, session.reconnectTimer);
+  }
+
+  clearReconnectTimer(senderId) {
+    const normalizedSenderId = this.normalizeSenderId(senderId);
+    const timer = this.reconnectTimers.get(normalizedSenderId);
+
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(normalizedSenderId);
+    }
+  }
+
+  async sendAlertSafe({ sender, status, reason, message }) {
+    try {
+      await this.alertService?.sendSenderAlert({
+        sender,
+        status,
+        reason,
+        message,
+      });
+    } catch (error) {
+      this.logger.error(
+        { error, senderId: sender?.id, status, reason },
+        "Failed while sending sender alert",
+      );
+    }
+  }
+
   shouldForceReauth(reasonCode) {
     return reasonCode === "logged_out" || reasonCode === "auth_failure";
   }
@@ -555,6 +685,7 @@ class WhatsappWebSessionManager {
         existingSession.reconnectTimer = null;
       }
 
+      this.clearReconnectTimer(normalizedSenderId);
       await this.safeDestroyClient(existingSession.client);
       await this.sleep(1000);
     } catch (error) {
@@ -607,6 +738,7 @@ class WhatsappWebSessionManager {
         session.reconnectTimer = null;
       }
 
+      this.clearReconnectTimer(normalizedSenderId);
       await this.safeDestroyClient(session.client);
       this.sessions.delete(normalizedSenderId);
     }

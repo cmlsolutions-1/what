@@ -5,6 +5,8 @@ import logger from "./config/logger.js";
 import pool from "./infrastructure/database/postgres-pool.js";
 import PostgresSenderRepository from "./infrastructure/repositories/postgres-sender-repository.js";
 import WhatsappWebSessionManager from "./infrastructure/whatsapp/whatsapp-web-session-manager.js";
+import EmailAlertService from "./infrastructure/notifications/email-alert-service.js";
+import env from "./config/env.js";
 
 import CreateSenderUseCase from "./application/use-cases/create-sender-use-case.js";
 import DisconnectSenderUseCase from "./application/use-cases/close-sender-use-case.js";
@@ -28,7 +30,8 @@ function createApp() {
 
 
   const senderRepository = new PostgresSenderRepository(pool);
-  const sessionManager = new WhatsappWebSessionManager({ logger });
+  const alertService = new EmailAlertService({ logger });
+  const sessionManager = new WhatsappWebSessionManager({ logger, alertService });
 
   const createSenderUseCase = new CreateSenderUseCase(senderRepository);
   const listSendersUseCase = new ListSendersUseCase(senderRepository);
@@ -71,6 +74,17 @@ function createApp() {
   app.use("/api/notifications", apiKeyMiddleware, buildNotificationRoutes(notificationController));
 
   app.use(notFoundHandler);
+
+  if (env.restoreSessionsOnStartup) {
+    setTimeout(async () => {
+      try {
+        const senders = await senderRepository.listAll();
+        await sessionManager.restore(senders);
+      } catch (error) {
+        logger.error({ error }, "Failed to restore WhatsApp sessions on startup");
+      }
+    }, 2000);
+  }
 
   return app;
 }
