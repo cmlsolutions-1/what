@@ -1,0 +1,41 @@
+services:
+  whatsapp-api:
+    build: .
+    ports:
+      - "127.0.0.1:3011:3010"
+    env_file:
+      - .env
+    environment:
+      PORT: "3010"
+      DATABASE_URL: postgresql://postgres:diagnostic-only@postgres:5432/whatsapp_diagnostic
+      WWEBJS_AUTH_DIR: /app/.wwebjs_auth
+      WWEBJS_HEADLESS: "true"
+      WWEBJS_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      RESTORE_SESSIONS_ON_STARTUP: "false"
+      ALERT_EMAIL_ENABLED: "false"
+      PRINT_QR_IN_TERMINAL: "false"
+    volumes:
+      - diagnostic_sessions:/app/.wwebjs_auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run db:init && npm run start"
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: whatsapp_diagnostic
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: diagnostic-only
+    volumes:
+      - diagnostic_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d whatsapp_diagnostic"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  diagnostic_sessions:
+  diagnostic_postgres:

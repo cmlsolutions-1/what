@@ -214,8 +214,12 @@ class WhatsappWebSessionManager {
               "No fue posible inicializar la sesión de WhatsApp después de limpiar bloqueos de Chromium.",
           });
 
+          await this.safeDestroyClient(session.client);
           this.sessions.delete(senderId);
-          throw retryError;
+          throw new AppError("Could not initialize the WhatsApp session", 502, {
+            code: "WHATSAPP_INITIALIZE_FAILED",
+            stage: "initialize",
+          });
         }
       }
 
@@ -235,8 +239,12 @@ class WhatsappWebSessionManager {
         message: "No fue posible inicializar la sesión de WhatsApp.",
       });
 
+      await this.safeDestroyClient(session.client);
       this.sessions.delete(senderId);
-      throw error;
+      throw new AppError("Could not initialize the WhatsApp session", 502, {
+        code: "WHATSAPP_INITIALIZE_FAILED",
+        stage: "initialize",
+      });
     }
 
     return this.buildStatus(session);

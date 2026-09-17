@@ -19,6 +19,8 @@ services:
 
     environment:
       - NODE_ENV=production
+      - WWEBJS_EXECUTABLE_PATH=/usr/bin/chromium
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
   postgres:
     image: postgres:16
