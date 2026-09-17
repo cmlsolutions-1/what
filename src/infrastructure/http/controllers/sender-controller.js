@@ -1,12 +1,14 @@
 import AppError from "../../../shared/errors/app-error.js";
 
 class SenderController {
-  constructor({ createSenderUseCase, listSendersUseCase, connectSenderUseCase, getSenderStatusUseCase, disconnectSenderUseCase }) {
+  constructor({ createSenderUseCase, listSendersUseCase, connectSenderUseCase, getSenderStatusUseCase, disconnectSenderUseCase, resetSenderAuthUseCase, deleteSenderUseCase }) {
     this.createSenderUseCase = createSenderUseCase;
     this.listSendersUseCase = listSendersUseCase;
     this.connectSenderUseCase = connectSenderUseCase;
     this.getSenderStatusUseCase = getSenderStatusUseCase;
     this.disconnectSenderUseCase = disconnectSenderUseCase;
+    this.resetSenderAuthUseCase = resetSenderAuthUseCase;
+    this.deleteSenderUseCase = deleteSenderUseCase;
   }
 
   create = async (req, res, next) => {
@@ -89,6 +91,40 @@ class SenderController {
 
       res.status(200).json({
         message: "Sender disconnected",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  resetAuth = async (req, res, next) => {
+    try {
+      const senderId = Number(req.params.senderId);
+      if (!Number.isInteger(senderId) || senderId <= 0) {
+        throw new AppError("senderId is invalid", 400);
+      }
+
+      const result = await this.resetSenderAuthUseCase.execute(senderId);
+      res.status(200).json({
+        message: "Saved session archived. Connect the sender to generate a new QR code",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  remove = async (req, res, next) => {
+    try {
+      const senderId = Number(req.params.senderId);
+      if (!Number.isInteger(senderId) || senderId <= 0) {
+        throw new AppError("senderId is invalid", 400);
+      }
+
+      const result = await this.deleteSenderUseCase.execute(senderId);
+      res.status(200).json({
+        message: "Sender deleted",
         data: result,
       });
     } catch (error) {

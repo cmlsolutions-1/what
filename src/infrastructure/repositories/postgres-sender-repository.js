@@ -52,6 +52,14 @@ class PostgresSenderRepository {
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
+  async deleteById(id) {
+    const result = await this.pool.query(
+      "DELETE FROM whatsapp_senders WHERE id = $1 RETURNING id",
+      [id],
+    );
+    return result.rowCount > 0;
+  }
+
   mapRow(row) {
     return new SenderAccount({
       id: row.id,

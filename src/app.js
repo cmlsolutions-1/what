@@ -14,6 +14,8 @@ import ListSendersUseCase from "./application/use-cases/list-senders-use-case.js
 import ConnectSenderUseCase from "./application/use-cases/connect-sender-use-case.js";
 import GetSenderStatusUseCase from "./application/use-cases/get-sender-status-use-case.js";
 import SendNotificationUseCase from "./application/use-cases/send-notification-use-case.js";
+import ResetSenderAuthUseCase from "./application/use-cases/reset-sender-auth-use-case.js";
+import DeleteSenderUseCase from "./application/use-cases/delete-sender-use-case.js";
 
 import SenderController from "./infrastructure/http/controllers/sender-controller.js";
 import NotificationController from "./infrastructure/http/controllers/notification-controller.js";
@@ -38,14 +40,18 @@ function createApp() {
   const connectSenderUseCase = new ConnectSenderUseCase(senderRepository, sessionManager);
   const getSenderStatusUseCase = new GetSenderStatusUseCase(senderRepository, sessionManager);
   const sendNotificationUseCase = new SendNotificationUseCase(senderRepository, sessionManager);
-  const disconnectSenderUseCase = new DisconnectSenderUseCase(senderRepository, sessionManager)
+  const disconnectSenderUseCase = new DisconnectSenderUseCase(senderRepository, sessionManager);
+  const resetSenderAuthUseCase = new ResetSenderAuthUseCase(senderRepository, sessionManager);
+  const deleteSenderUseCase = new DeleteSenderUseCase(senderRepository, sessionManager);
 
   const senderController = new SenderController({
     createSenderUseCase,
     listSendersUseCase,
     connectSenderUseCase,
     getSenderStatusUseCase,
-    disconnectSenderUseCase
+    disconnectSenderUseCase,
+    resetSenderAuthUseCase,
+    deleteSenderUseCase,
   });
 
   const notificationController = new NotificationController({

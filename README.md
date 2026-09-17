@@ -53,7 +53,13 @@ Todos los endpoints bajo `/api` requieren la cabecera `x-api-key`.
 | Iniciar conexión | `POST /api/senders/:senderId/connect` |
 | Consultar estado y QR | `GET /api/senders/:senderId/status` |
 | Desconectar | `GET /api/senders/:senderId/disconnect` |
+| Archivar sesión guardada para volver a vincular | `POST /api/senders/:senderId/reset-auth` |
+| Eliminar emisor y liberar su número | `DELETE /api/senders/:senderId` |
 | Enviar notificación | `POST /api/notifications/send` |
+
+Si una línea antigua no puede inicializarse pero una nueva sí conecta, usa `POST /api/senders/:senderId/reset-auth` para esa línea y después `POST /api/senders/:senderId/connect`. El primer paso desconecta la línea, mueve su carpeta de autenticación a una copia con sufijo `backup-...` dentro de `WWEBJS_AUTH_DIR` y conserva el registro en PostgreSQL. No se permite restablecer una línea conectada ni una conexión que esté iniciándose. El segundo paso genera un QR nuevo para volver a vincular el teléfono. Hazlo una línea a la vez; el teléfono deberá escanear el QR de nuevo.
+
+Si necesitas registrar de nuevo el mismo número con otro ID, usa `DELETE /api/senders/:senderId` mientras la línea esté desconectada. La operación también archiva la carpeta de autenticación, elimina el registro de PostgreSQL y libera la restricción de número único. Luego llama a `POST /api/senders` y vincula la nueva línea con QR. La línea nueva tendrá otro ID; cualquier sistema que guarde el ID anterior deberá actualizarlo. Las copias de sesión archivadas permanecen en `WWEBJS_AUTH_DIR` para recuperación manual.
 
 Ejemplo de envío:
 

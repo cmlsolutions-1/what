@@ -14,6 +14,10 @@ class SenderRepository {
   async findByNormalizedPhoneNumber() {
     throw new Error("Method not implemented");
   }
+
+  async deleteById() {
+    throw new Error("Method not implemented");
+  }
 }
 
 export default SenderRepository;

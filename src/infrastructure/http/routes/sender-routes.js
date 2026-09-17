@@ -10,6 +10,8 @@ function buildSenderRoutes(senderController) {
   router.post("/:senderId/connect", senderController.connect);
   router.get("/:senderId/status", senderController.status);
   router.get("/:senderId/disconnect", senderController.disconnect)
+  router.post("/:senderId/reset-auth", senderController.resetAuth);
+  router.delete("/:senderId", senderController.remove);
 
   return router;
 }

@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "node:crypto";
 
 import pino from "pino";
 import qrcode from "qrcode-terminal";
@@ -743,6 +744,46 @@ class WhatsappWebSessionManager {
       qr: null,
       lastDisconnectReason: null,
     };
+  }
+
+  async resetAuth(sender) {
+    const senderId = this.normalizeSenderId(sender.id);
+    if (this.connectingPromises.has(senderId)) {
+      throw new AppError("Wait for the current connection attempt to finish", 409);
+    }
+
+    if (this.sessions.get(senderId)?.status === "connected") {
+      throw new AppError("Disconnect the sender before resetting its saved session", 409);
+    }
+
+    const authClientId = sender.authFolder || `sender_${senderId}`;
+    if (!/^[-_\w]+$/.test(authClientId)) {
+      throw new AppError("Saved session name is invalid", 500);
+    }
+
+    this.clearReconnectTimer(senderId);
+    await this.disconnect(senderId);
+
+    const sessionPath = path.join(env.wwebjsAuthDir, `session-${authClientId}`);
+    if (!fs.existsSync(sessionPath)) {
+      return { status: "disconnected", archived: false };
+    }
+
+    const backupPath = path.join(
+      env.wwebjsAuthDir,
+      `session-${authClientId}-backup-${randomUUID()}`,
+    );
+    try {
+      fs.renameSync(sessionPath, backupPath);
+    } catch (error) {
+      this.logger.error({ error, senderId }, "Failed to archive saved WhatsApp session");
+      throw new AppError("Could not reset the saved WhatsApp session", 500, {
+        code: "AUTH_RESET_FAILED",
+      });
+    }
+
+    this.logger.info({ senderId, backupPath }, "Saved WhatsApp session archived for relinking");
+    return { status: "disconnected", archived: true };
   }
 
   buildStatus(session) {
