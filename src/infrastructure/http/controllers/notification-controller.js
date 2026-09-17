@@ -19,8 +19,11 @@ class NotificationController {
         message,
       });
 
-      res.status(200).json({
-        message: "Notification sent",
+      const confirmed = result.confirmationStatus === "confirmed";
+      res.status(confirmed ? 200 : 202).json({
+        message: confirmed
+          ? "Notification sent"
+          : "Message submission was not confirmed; check the recipient before retrying",
         data: result,
       });
     } catch (error) {

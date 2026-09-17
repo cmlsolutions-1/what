@@ -13,10 +13,7 @@ class SendNotificationUseCase {
     }
 
     const senderNormalizedPhone = normalizePhoneNumber(fromPhoneNumber);
-    console.log(senderNormalizedPhone);
     const sender = await this.senderRepository.findByNormalizedPhoneNumber(senderNormalizedPhone);
-
-    console.log(sender);
 
     if (!sender) {
       throw new AppError("The sender phone number is not registered", 404);

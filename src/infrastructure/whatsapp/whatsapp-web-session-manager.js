@@ -244,16 +244,11 @@ class WhatsappWebSessionManager {
 
   createClient(authClientId) {
     const puppeteerConfig = {
-      headless: env.wwebjsHeadless === true || env.wwebjsHeadless === "true",
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--no-zygote",
-        "--single-process",
-        "--disable-gpu",
-        "--disable-features=site-per-process",
-      ],
+      headless: env.wwebjsHeadless,
+      // Container flags are unnecessary on macOS and can destabilize Chrome.
+      args: process.platform === "linux"
+        ? ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        : [],
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
     };
 
@@ -267,8 +262,7 @@ class WhatsappWebSessionManager {
         dataPath: env.wwebjsAuthDir,
       }),
       puppeteer: puppeteerConfig,
-      takeoverOnConflict: true,
-      takeoverTimeoutMs: 0,
+      takeoverOnConflict: env.wwebjsTakeoverOnConflict,
     });
   }
 
@@ -305,8 +299,6 @@ class WhatsappWebSessionManager {
     session.client.on("ready", async () => {
       if (session.isClosing) return;
 
-      console.log("Readyy");
-
       if (session.reconnectTimer) {
         clearTimeout(session.reconnectTimer);
         session.reconnectTimer = null;
@@ -318,9 +310,6 @@ class WhatsappWebSessionManager {
       session.status = "connected";
       session.qr = null;
       session.lastDisconnectReason = null;
-
-      console.log("Llegue por aqui");
-      console.log(session);
 
       await this.updateConnectionStatusSafe({
         senderId,
@@ -458,7 +447,16 @@ class WhatsappWebSessionManager {
 
     const recipientNormalizedPhone =
       normalizePhoneNumber(recipientPhoneNumber);
-    const numberId = await session.client.getNumberId(recipientNormalizedPhone);
+    let numberId;
+    try {
+      numberId = await session.client.getNumberId(recipientNormalizedPhone);
+    } catch (error) {
+      this.logger.error({ err: error, senderId: normalizedSenderId, stage: "recipient_lookup" }, "Failed to verify WhatsApp recipient");
+      throw new AppError("Could not verify the recipient on WhatsApp", 502, {
+        code: "RECIPIENT_LOOKUP_FAILED",
+        stage: "recipient_lookup",
+      });
+    }
 
     if (!numberId?._serialized) {
       throw new AppError(
@@ -468,57 +466,40 @@ class WhatsappWebSessionManager {
     }
 
     const chatId = numberId._serialized;
-    await this.openChatBeforeSend(session.client, chatId);
 
-    const response = await session.client.sendMessage(chatId, message);
+    let response;
+    try {
+      response = await session.client.sendMessage(chatId, message, {
+        waitUntilMsgSent: true,
+      });
+    } catch (error) {
+      this.logger.error({ err: error, senderId: normalizedSenderId, stage: "send_message" }, "WhatsApp message send failed");
+      throw new AppError("WhatsApp could not send the message", 502, {
+        code: "WHATSAPP_SEND_FAILED",
+        stage: "send_message",
+      });
+    }
+
+    const messageId = response?.id?._serialized ?? response?.id?.id;
+    if (!messageId) {
+      this.logger.warn(
+        { senderId: normalizedSenderId, stage: "send_message" },
+        "WhatsApp did not return a message ID; delivery is indeterminate, do not retry automatically",
+      );
+      return {
+        recipientPhoneNumber: recipientNormalizedPhone,
+        messageId: null,
+        confirmationStatus: "unconfirmed",
+        sentAt: null,
+      };
+    }
 
     return {
       recipientPhoneNumber: recipientNormalizedPhone,
-      messageId: response?.id?._serialized ?? response?.id?.id ?? null,
+      messageId,
+      confirmationStatus: "confirmed",
       sentAt: new Date().toISOString(),
     };
-  }
-
-  async openChatBeforeSend(client, chatId) {
-    try {
-      if (client.interface?.openChatWindow) {
-        await client.interface.openChatWindow(chatId);
-        await this.sleep(300);
-        return;
-      }
-
-      const opened = await client.pupPage?.evaluate(async (targetChatId) => {
-        const store = window.Store;
-        if (
-          !store?.Cmd?.openChatAt ||
-          !store?.Chat?.find ||
-          !store?.WidFactory?.createWid
-        ) {
-          return false;
-        }
-
-        const wid = store.WidFactory.createWid(targetChatId);
-        const chat = await store.Chat.find(wid);
-
-        if (!chat) {
-          return false;
-        }
-
-        await store.Cmd.openChatAt(chat);
-        return true;
-      }, chatId);
-
-      if (!opened) {
-        throw new Error("open chat action was not available");
-      }
-
-      await this.sleep(300);
-    } catch (error) {
-      throw new AppError("Could not open chat before sending message", 500, {
-        chatId,
-        reason: error.message,
-      });
-    }
   }
 
   async updateConnectionStatusSafe({ senderId, status, lastDisconnectReason }) {

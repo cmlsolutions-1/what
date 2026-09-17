@@ -54,7 +54,6 @@ function createApp() {
 
   const app = express();
 
-  app.use(errorHandler);
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
@@ -74,6 +73,7 @@ function createApp() {
   app.use("/api/notifications", apiKeyMiddleware, buildNotificationRoutes(notificationController));
 
   app.use(notFoundHandler);
+  app.use(errorHandler);
 
   if (env.restoreSessionsOnStartup) {
     setTimeout(async () => {
@@ -92,7 +92,7 @@ function createApp() {
 function apiKeyMiddleware(req, res, next) {
   const apiKey = req.headers["x-api-key"];
 
-  if (apiKey !== process.env.API_KEY) {
+  if (apiKey !== env.apiKey) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 

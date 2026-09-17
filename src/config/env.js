@@ -12,7 +12,7 @@ function getRequiredEnv(name) {
 }
 
 function getPort() {
-  const rawPort = process.env.PORT ?? "3010";
+  const rawPort = process.env.PORT || "3010";
   const parsedPort = Number(rawPort);
 
   if (Number.isNaN(parsedPort) || parsedPort <= 0) {
@@ -51,10 +51,12 @@ function getNumberEnv(name, defaultValue) {
 const env = {
   port: getPort(),
   databaseUrl: getRequiredEnv("DATABASE_URL"),
-  logLevel: process.env.LOG_LEVEL ?? "info",
+  apiKey: getRequiredEnv("API_KEY"),
+  logLevel: process.env.LOG_LEVEL || "info",
   printQrInTerminal: process.env.PRINT_QR_IN_TERMINAL !== "false",
-  wwebjsAuthDir: path.resolve(process.cwd(), process.env.WWEBJS_AUTH_DIR ?? ".wwebjs_auth"),
+  wwebjsAuthDir: path.resolve(process.cwd(), process.env.WWEBJS_AUTH_DIR || ".wwebjs_auth"),
   wwebjsHeadless: process.env.WWEBJS_HEADLESS !== "false",
+  wwebjsTakeoverOnConflict: getBooleanEnv("WWEBJS_TAKEOVER_ON_CONFLICT", false),
   wwebjsExecutablePath: process.env.WWEBJS_EXECUTABLE_PATH || undefined,
   alertEmailEnabled: getBooleanEnv("ALERT_EMAIL_ENABLED", false),
   alertEmailTo: process.env.ALERT_EMAIL_TO || undefined,
