@@ -18,3 +18,19 @@ ALTER TABLE whatsapp_senders
 
 CREATE INDEX IF NOT EXISTS idx_whatsapp_senders_normalized_phone
   ON whatsapp_senders(normalized_phone_number);
+
+CREATE TABLE IF NOT EXISTS whatsapp_pairing_links (
+  id BIGSERIAL PRIMARY KEY,
+  sender_id INTEGER NOT NULL REFERENCES whatsapp_senders(id) ON DELETE CASCADE,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  used_reason VARCHAR(30),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_pairing_links_sender
+  ON whatsapp_pairing_links(sender_id);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_pairing_links_token
+  ON whatsapp_pairing_links(token_hash);

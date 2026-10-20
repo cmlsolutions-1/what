@@ -8,6 +8,7 @@
     "dev": "node src/server.js",
     "start": "node src/server.js",
     "db:init": "node src/scripts/init-db.js",
+    "alert:test": "node src/scripts/verify-email-alert.js",
     "test": "node --test"
   },
   "keywords": [

@@ -34,7 +34,7 @@ function clearChromiumLocks(sessionPath) {
 }
 
 class WhatsappWebSessionManager {
-  constructor({ logger, senderRepository, alertService }) {
+  constructor({ logger, senderRepository, alertService, pairingLinkRepository }) {
     this.logger =
       logger ||
       pino({
@@ -43,6 +43,7 @@ class WhatsappWebSessionManager {
 
     this.senderRepository = senderRepository ?? new WhatsappSenderRepository();
     this.alertService = alertService;
+    this.pairingLinkRepository = pairingLinkRepository;
 
     this.sessions = new Map();
     this.connectingPromises = new Map();
@@ -326,14 +327,14 @@ class WhatsappWebSessionManager {
         lastDisconnectReason: null,
       });
 
+      await this.consumePairingLinksSafe(senderId);
+
       this.logger.info({ senderId }, "Sender is connected to WhatsApp Web");
     });
 
     session.client.on("auth_failure", async () => {
       if (session.isClosing) return;
       session.isClosing = true;
-
-      console.log("auth_failure");
 
       session.status = "needs_reauth";
       session.qr = null;
@@ -605,8 +606,31 @@ class WhatsappWebSessionManager {
       });
     } catch (error) {
       this.logger.error(
-        { error, senderId: sender?.id, status, reason },
+        {
+          senderId: sender?.id,
+          status,
+          reason,
+          message: error instanceof Error ? error.message : String(error),
+          code: error?.code,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
         "Failed while sending sender alert",
+      );
+    }
+  }
+
+  async consumePairingLinksSafe(senderId) {
+    try {
+      await this.pairingLinkRepository?.consumeActiveForSender(senderId, "connected");
+    } catch (error) {
+      this.logger.error(
+        {
+          senderId,
+          message: error instanceof Error ? error.message : String(error),
+          code: error?.code,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        "Failed to invalidate pairing links after connection",
       );
     }
   }

@@ -4,6 +4,7 @@ import logger from "./config/logger.js";
 
 import pool from "./infrastructure/database/postgres-pool.js";
 import PostgresSenderRepository from "./infrastructure/repositories/postgres-sender-repository.js";
+import PostgresPairingLinkRepository from "./infrastructure/repositories/postgres-pairing-link-repository.js";
 import WhatsappWebSessionManager from "./infrastructure/whatsapp/whatsapp-web-session-manager.js";
 import EmailAlertService from "./infrastructure/notifications/email-alert-service.js";
 import env from "./config/env.js";
@@ -16,12 +17,18 @@ import GetSenderStatusUseCase from "./application/use-cases/get-sender-status-us
 import SendNotificationUseCase from "./application/use-cases/send-notification-use-case.js";
 import ResetSenderAuthUseCase from "./application/use-cases/reset-sender-auth-use-case.js";
 import DeleteSenderUseCase from "./application/use-cases/delete-sender-use-case.js";
+import CreatePairingLinkUseCase from "./application/use-cases/create-pairing-link-use-case.js";
+import ResolvePairingLinkUseCase from "./application/use-cases/resolve-pairing-link-use-case.js";
+import GetPublicPairingStatusUseCase from "./application/use-cases/get-public-pairing-status-use-case.js";
+import ConnectPublicPairingUseCase from "./application/use-cases/connect-public-pairing-use-case.js";
 
 import SenderController from "./infrastructure/http/controllers/sender-controller.js";
 import NotificationController from "./infrastructure/http/controllers/notification-controller.js";
+import PairingController from "./infrastructure/http/controllers/pairing-controller.js";
 
 import buildSenderRoutes from "./infrastructure/http/routes/sender-routes.js";
 import buildNotificationRoutes from "./infrastructure/http/routes/notification-routes.js";
+import buildPublicPairingRoutes from "./infrastructure/http/routes/public-pairing-routes.js";
 
 import notFoundHandler from "./infrastructure/http/middlewares/not-found-handler.js";
 import errorHandler from "./infrastructure/http/middlewares/error-handler.js";
@@ -32,8 +39,13 @@ function createApp() {
 
 
   const senderRepository = new PostgresSenderRepository(pool);
+  const pairingLinkRepository = new PostgresPairingLinkRepository(pool);
   const alertService = new EmailAlertService({ logger });
-  const sessionManager = new WhatsappWebSessionManager({ logger, alertService });
+  const sessionManager = new WhatsappWebSessionManager({
+    logger,
+    alertService,
+    pairingLinkRepository,
+  });
 
   const createSenderUseCase = new CreateSenderUseCase(senderRepository);
   const listSendersUseCase = new ListSendersUseCase(senderRepository);
@@ -43,6 +55,24 @@ function createApp() {
   const disconnectSenderUseCase = new DisconnectSenderUseCase(senderRepository, sessionManager);
   const resetSenderAuthUseCase = new ResetSenderAuthUseCase(senderRepository, sessionManager);
   const deleteSenderUseCase = new DeleteSenderUseCase(senderRepository, sessionManager);
+  const createPairingLinkUseCase = new CreatePairingLinkUseCase(
+    senderRepository,
+    pairingLinkRepository,
+    sessionManager,
+    env,
+  );
+  const resolvePairingLinkUseCase = new ResolvePairingLinkUseCase(
+    senderRepository,
+    pairingLinkRepository,
+  );
+  const getPublicPairingStatusUseCase = new GetPublicPairingStatusUseCase(
+    resolvePairingLinkUseCase,
+    sessionManager,
+  );
+  const connectPublicPairingUseCase = new ConnectPublicPairingUseCase(
+    resolvePairingLinkUseCase,
+    sessionManager,
+  );
 
   const senderController = new SenderController({
     createSenderUseCase,
@@ -56,6 +86,11 @@ function createApp() {
 
   const notificationController = new NotificationController({
     sendNotificationUseCase,
+  });
+  const pairingController = new PairingController({
+    createPairingLinkUseCase,
+    getPublicPairingStatusUseCase,
+    connectPublicPairingUseCase,
   });
 
   const app = express();
@@ -75,8 +110,9 @@ function createApp() {
 
   app.use(limiter);
 
-  app.use("/api/senders", apiKeyMiddleware, buildSenderRoutes(senderController));
+  app.use("/api/senders", apiKeyMiddleware, buildSenderRoutes(senderController, pairingController));
   app.use("/api/notifications", apiKeyMiddleware, buildNotificationRoutes(notificationController));
+  app.use("/api/public/pairing", buildPublicPairingRoutes(pairingController));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

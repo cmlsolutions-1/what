@@ -18,7 +18,8 @@ test("un fallo de inicialización destruye el cliente y permite reintentar", asy
   manager.connectingPromises = new Map();
   manager.reconnectTimers = new Map();
   manager.updateConnectionStatusSafe = async () => {};
-  manager.sendAlertSafe = async () => {};
+  const alerts = [];
+  manager.sendAlertSafe = async (alert) => alerts.push(alert);
   manager.registerClientEvents = () => {};
   manager.createClient = () => ({
     async initialize() { throw failure; },
@@ -35,5 +36,6 @@ test("un fallo de inicialización destruye el cliente y permite reintentar", asy
     assert.equal(destroyed, attempt);
     assert.equal(manager.sessions.has(4), false);
     assert.equal(manager.connectingPromises.has(4), false);
+    assert.equal(alerts.at(-1).reason, "initialize_failed");
   }
 });
